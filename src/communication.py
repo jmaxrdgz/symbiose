@@ -5,7 +5,7 @@ class CommunicationInterface:
     def connect(self):
         raise NotImplementedError
 
-    def read(self):
+    def read(self, total_bytes):
         raise NotImplementedError
 
     def close(self):
