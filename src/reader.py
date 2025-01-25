@@ -1,5 +1,6 @@
 import threading
 import numpy as np
+from data_packet import DataPacket
 
 from communication import (
     SerialCommunication,
@@ -25,16 +26,8 @@ class Reader(threading.Thread):
         self.dtype = dtype
         self.fdim = fdim
         self.com = self._create_com(com_type, **kwargs)
-
-    def _create_com(self, com_type, **kwargs):
-        if com_type == 'serial':
-            return SerialCommunication(kwargs['port'], kwargs['baudrate'])
-        if com_type == 'bluetooth':
-            return BluetoothCommunication() # TODO: Comming soon
-        if com_type == 'wifi':
-            return WiFiCommunication() # TODO: Comming soon
-
-        raise ValueError(f"Unknown communication type: {com_type}")
+        self.data_queue = None
+        self.running = False
 
     def __repr__(self):
         return f"Reader({self.name})"
@@ -48,15 +41,52 @@ class Reader(threading.Thread):
         )
         return info_str
 
+    def _create_com(self, com_type, **kwargs):
+        if com_type == 'serial':
+            return SerialCommunication(kwargs['port'], kwargs['baudrate'])
+        if com_type == 'bluetooth':
+            return BluetoothCommunication() # TODO: Comming soon
+        if com_type == 'wifi':
+            return WiFiCommunication() # TODO: Comming soon
+
+        raise ValueError(f"Unknown communication type: {com_type}")
+
+    def set_data_queue(self, data_queue):
+        """
+        Set the data queue to forward frames.
+        """
+        self.data_queue = data_queue
+
+    def run(self):
+        """
+        Start reading frames from the communication interface.
+        """
+        if self.data_queue is None:
+            raise ValueError("Data queue is not set.")
+
+        self.running = True
+        while self.running:
+            frame = self.next()
+            if self.data_queue and frame is not None:
+                self.data_queue.put(frame)
+
+    def stop(self):
+        """
+        Stop reading frames from the communication interface.
+        """
+        self.running = False
+
     def next(self):
         """
         Read the next frame from the communication interface.
         Frame is shaped according to the fdim attribute and dtype.
 
         Returns:
-            np.ndarray: The next frame.
+            DataPacket: The next frame encapsulated in a DataPacket.
         """
-        n_bytes = np.prod(self.fdim) * self.dtype().itemsize
+        n_bytes = np.prod(self.fdim) * np.dtype(self.dtype).itemsize
         frame_data = self.com.read(n_bytes)
-        frame = np.array(frame_data, dtype=self.dtype).reshape(self.fdim)
-        return frame
+        if frame_data:
+            frame = np.frombuffer(frame_data, dtype=self.dtype).reshape(self.fdim)
+            return DataPacket(self.name, frame)
+        return None
